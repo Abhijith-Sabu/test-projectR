@@ -44,7 +44,6 @@ def welcome(request: Request):
     user = request.session.get('user')
     if not user:
         return RedirectResponse('/')
-    insert_data(user['sub'])
     return templates.TemplateResponse(
         name='welcome.html',
         context={'request': request, 'user': user}

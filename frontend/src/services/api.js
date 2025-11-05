@@ -1,7 +1,19 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, options);
+  const headers = new Headers(options.headers || {});
+
+  if (typeof window !== 'undefined') {
+    const token = window.localStorage?.getItem('authToken');
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+  });
   const contentType = response.headers.get('content-type') || '';
 
   let data;
@@ -13,7 +25,9 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const message = typeof data === 'string' ? data : data?.message || 'Unexpected error';
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -54,6 +68,20 @@ export async function askReceiptAssistant(prompt) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt }),
+  });
+}
+
+export async function loginWithGoogle(credential) {
+  return request('/auth/google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+}
+
+export async function fetchCurrentUser() {
+  return request('/auth/me', {
+    method: 'GET',
   });
 }
 

@@ -26,18 +26,18 @@ def normalize_receipt(raw_data):
         })
     return receipt
 
-def insert_data(receipt_data,user_id):
+def insert_data(receipt_data, user_id):
     """Save a new receipt to Firestore."""
     try:
         receipt = normalize_receipt(receipt_data)
         doc_ref = db.collection("receipts").add({
-            "user_sub":user_id,
+            "user_sub": user_id,
             "type_of_purchase": receipt["type_of_purchase"],
             "establishment_name": receipt["establishment_name"],
             "date": receipt["date"],
             "total": receipt["total"],
-            "created_at": firestore.SERVER_TIMESTAMP
-        })[1]
+            "created_at": firestore.SERVER_TIMESTAMP,
+        })[0]
         receipt_id = doc_ref.id
 
         for item in receipt["items"]:
@@ -68,7 +68,11 @@ def insert_data(receipt_data,user_id):
 def get_all_receipts(user_id):
     """Fetch all receipts + their items from Firestore."""
     # receipts_ref = db.collection("receipts").order_by("created_at", direction=firestore.Query.DESCENDING)
-    receipts_ref = db.collection("receipts").where("user_sub","==",user_id).order_by("created_at",direction=firestore.Query.DESCENDING)
+    receipts_ref = (
+        db.collection("receipts")
+        .where("user_sub", "==", user_id)
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+    )
     docs = receipts_ref.stream()
     receipts = []
 
