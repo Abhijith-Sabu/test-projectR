@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { GoogleLogin } from '@react-oauth/google';
 import {
   API_BASE_URL,
   askReceiptAssistant,
   extractReceipt,
+  fetchCurrentUser,
   fetchReceipts,
+  loginWithGoogle,
   saveReceipt,
   saveReceiptToWallet,
 } from './services/api';
@@ -45,7 +48,27 @@ function normalizeReceipt(raw) {
   };
 }
 
+function readStoredAuth() {
+  if (typeof window === 'undefined') {
+    return { token: null, user: null };
+  }
+
+  try {
+    const token = window.localStorage?.getItem('authToken');
+    const userRaw = window.localStorage?.getItem('authUser');
+    if (token && userRaw) {
+      const user = JSON.parse(userRaw);
+      return { token, user };
+    }
+  } catch (error) {
+    console.warn('Failed to read stored auth state', error);
+  }
+
+  return { token: null, user: null };
+}
+
 function App() {
+  const [auth, setAuth] = useState(() => readStoredAuth());
   const [activeTab, setActiveTab] = useState('upload');
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -61,6 +84,9 @@ function App() {
   const [chatHistory, setChatHistory] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
 
+  const isAuthenticated = Boolean(auth.token);
+  const currentUser = auth.user;
+
   const showMessage = useCallback((type, text) => {
     setGlobalMessage({ type, text });
     if (text) {
@@ -68,7 +94,66 @@ function App() {
     }
   }, []);
 
+  const persistAuth = useCallback((token, user) => {
+    if (typeof window !== 'undefined') {
+      if (token && user) {
+        window.localStorage.setItem('authToken', token);
+        window.localStorage.setItem('authUser', JSON.stringify(user));
+      } else {
+        window.localStorage.removeItem('authToken');
+        window.localStorage.removeItem('authUser');
+      }
+    }
+
+    if (token && user) {
+      setAuth({ token, user });
+    } else {
+      setAuth({ token: null, user: null });
+    }
+  }, []);
+
+  const handleLogout = useCallback(
+    ({ silent = false } = {}) => {
+      persistAuth(null, null);
+      setReceipts([]);
+      setReceiptsError('');
+      setExtracted(null);
+      setFormData(DEFAULT_RECEIPT);
+      setSelectedFile(null);
+      setWalletLoading({});
+      setChatHistory([]);
+      setChatInput('');
+      setActiveTab('upload');
+      setUploading(false);
+      setSaving(false);
+      setLoadingReceipts(false);
+      setChatLoading(false);
+      if (!silent) {
+        showMessage('success', 'Signed out successfully.');
+      }
+    },
+    [persistAuth, showMessage],
+  );
+
+  const handleApiError = useCallback(
+    (error, fallbackMessage) => {
+      if (error?.status === 401) {
+        showMessage('error', 'Session expired. Please sign in again.');
+        handleLogout({ silent: true });
+      } else {
+        showMessage('error', error?.message || fallbackMessage);
+      }
+    },
+    [handleLogout, showMessage],
+  );
+
   const loadReceipts = useCallback(async () => {
+    if (!isAuthenticated) {
+      setReceipts([]);
+      setReceiptsError('');
+      return;
+    }
+
     setLoadingReceipts(true);
     setReceiptsError('');
     try {
@@ -79,15 +164,78 @@ function App() {
         throw new Error(response?.message || 'Failed to load receipts');
       }
     } catch (error) {
-      setReceiptsError(error.message || 'Unable to load receipts');
+      handleApiError(error, 'Unable to load receipts');
+      if (error?.status !== 401) {
+        setReceiptsError(error.message || 'Unable to load receipts');
+      }
     } finally {
       setLoadingReceipts(false);
     }
-  }, []);
+  }, [handleApiError, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     loadReceipts();
-  }, [loadReceipts]);
+  }, [isAuthenticated, loadReceipts]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !auth.token) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const verifySession = async () => {
+      try {
+        const response = await fetchCurrentUser();
+        if (!cancelled && response?.status === 'success') {
+          persistAuth(auth.token, response.user);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          handleApiError(error, 'Authentication required.');
+        }
+      }
+    };
+
+    verifySession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.token, handleApiError, isAuthenticated, persistAuth]);
+
+  const handleGoogleSuccess = useCallback(
+    async (credentialResponse) => {
+      const credential = credentialResponse?.credential;
+      if (!credential) {
+        showMessage('error', 'Google sign-in did not return a credential.');
+        return;
+      }
+
+      try {
+        const result = await loginWithGoogle(credential);
+        if (result?.status !== 'success') {
+          throw new Error(result?.message || 'Google sign-in failed.');
+        }
+
+        persistAuth(result.token, result.user);
+        setChatHistory([]);
+        setChatInput('');
+        setActiveTab('upload');
+        showMessage('success', `Welcome, ${result.user?.name || result.user?.email || 'there'}!`);
+      } catch (error) {
+        showMessage('error', error?.message || 'Google sign-in failed.');
+      }
+    },
+    [persistAuth, showMessage],
+  );
+
+  const handleGoogleError = useCallback(() => {
+    showMessage('error', 'Google sign-in was cancelled.');
+  }, [showMessage]);
 
   const handleFileChange = (event) => {
     const file = event.target.files?.[0] || null;
@@ -113,7 +261,7 @@ function App() {
       setFormData(normalized);
       showMessage('success', 'Receipt extracted. Review details before saving.');
     } catch (error) {
-      showMessage('error', error.message || 'Extraction failed.');
+      handleApiError(error, 'Extraction failed.');
     } finally {
       setUploading(false);
     }
@@ -178,7 +326,7 @@ function App() {
       await loadReceipts();
       setActiveTab('receipts');
     } catch (error) {
-      showMessage('error', error.message || 'Could not save receipt.');
+      handleApiError(error, 'Could not save receipt.');
     } finally {
       setSaving(false);
     }
@@ -199,7 +347,7 @@ function App() {
       }
       await loadReceipts();
     } catch (error) {
-      showMessage('error', error.message || 'Failed to save to wallet.');
+      handleApiError(error, 'Failed to save to wallet.');
     } finally {
       setWalletLoading((prev) => ({ ...prev, [receiptId]: false }));
     }
@@ -218,6 +366,10 @@ function App() {
       const reply = response?.reply || 'No response received.';
       setChatHistory((prev) => [...prev, { role: 'assistant', text: reply }]);
     } catch (error) {
+      if (error?.status === 401) {
+        handleApiError(error, 'Assistant unavailable.');
+        return;
+      }
       setChatHistory((prev) => [
         ...prev,
         { role: 'assistant', text: `Error: ${error.message || 'Unable to get assistant reply.'}` },
@@ -243,6 +395,46 @@ function App() {
     </button>
   );
 
+  const headerActions = currentUser && (
+    <div className="header-right">
+      <span className="base-url">API: {API_BASE_URL}</span>
+      <div className="user-chip">
+        {currentUser.picture && (
+          <img src={currentUser.picture} alt={currentUser.name || currentUser.email} />
+        )}
+        <div className="user-meta">
+          <span className="user-name">{currentUser.name || currentUser.email}</span>
+          <span className="user-email">{currentUser.email}</span>
+        </div>
+        <button type="button" className="logout-button" onClick={() => handleLogout()}>
+          Log out
+        </button>
+      </div>
+    </div>
+  );
+
+  const globalBanner =
+    globalMessage && <div className={`global-message ${globalMessage.type}`}>{globalMessage.text}</div>;
+
+  if (!isAuthenticated) {
+    return (
+      <div className="auth-shell">
+        <div className="auth-card">
+          <div className="auth-header">
+            <h1>Project R</h1>
+            <p>Sign in with Google to manage and analyse your receipts.</p>
+          </div>
+          {globalBanner}
+          <div className="auth-actions">
+            <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} useOneTap={false} />
+          </div>
+          <p className="auth-caption">We only use your Google account to secure your personal workspace.</p>
+          <span className="auth-api">API: {API_BASE_URL}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -250,14 +442,12 @@ function App() {
           <h1>Project R</h1>
           <p className="subtitle">Upload, review, save, and analyse receipts with Google Wallet integration.</p>
         </div>
-        <span className="base-url">API: {API_BASE_URL}</span>
+        {headerActions}
       </header>
 
       <nav className="tabs">{Object.keys(tabLabels).map(renderTabButton)}</nav>
 
-      {globalMessage && (
-        <div className={`global-message ${globalMessage.type}`}>{globalMessage.text}</div>
-      )}
+      {globalBanner}
 
       <main className="tab-content">
         {activeTab === 'upload' && (
