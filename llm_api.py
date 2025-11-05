@@ -1,7 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .llm import llm_model
-from .fbase import insert_data
+from .fbase import insert_data, get_all_receipts
 import tempfile, shutil, logging, inspect, json
 from typing import Any
 from .main import create_wallet_object
@@ -69,6 +69,16 @@ async def save_receipt(request: Request):
         logging.exception("save_receipt failed")
         return {"status": "error", "message": str(e)}
 
+
+@app.get("/receipts")
+async def list_receipts():
+    """Return all receipts stored in Firestore."""
+    try:
+        receipts = get_all_receipts()
+        return {"status": "success", "data": safe_json(receipts)}
+    except Exception as e:
+        logging.exception("list_receipts failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/save-to-wallet/{receipt_id}")
