@@ -1,10 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from .llm import llm_model
-from .fbase import insert_data, get_all_receipts
+from llm import llm_model
+from fbase import insert_data, get_all_receipts
 import tempfile, shutil, logging, inspect, json
 from typing import Any
-from .main import create_wallet_object
+from main import create_wallet_object
 from firebase_admin import firestore
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)

@@ -16,7 +16,7 @@ API_KEY = os.getenv("GOOGLE_API_KEY")
 client = genai.Client(api_key=API_KEY)
 
 if not firebase_admin._apps:
-    cred = credentials.Certificate("Gwallet/firebase_key/gwallet-180a9-firebase-adminsdk-fbsvc-c1fbf88538.json")
+    cred = credentials.Certificate("firebase_key/gwallet-180a9-firebase-adminsdk-fbsvc-c1fbf88538.json")
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 

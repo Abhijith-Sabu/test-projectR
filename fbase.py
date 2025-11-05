@@ -2,7 +2,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 if not firebase_admin._apps:
-    cred = credentials.Certificate("Gwallet/firebase_key/gwallet-180a9-firebase-adminsdk-fbsvc-c1fbf88538.json")
+    cred = credentials.Certificate("firebase_key/gwallet-180a9-firebase-adminsdk-fbsvc-c1fbf88538.json")
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -26,11 +26,12 @@ def normalize_receipt(raw_data):
         })
     return receipt
 
-def insert_data(receipt_data):
+def insert_data(receipt_data,user_id):
     """Save a new receipt to Firestore."""
     try:
         receipt = normalize_receipt(receipt_data)
         doc_ref = db.collection("receipts").add({
+            "user_sub":user_id,
             "type_of_purchase": receipt["type_of_purchase"],
             "establishment_name": receipt["establishment_name"],
             "date": receipt["date"],
@@ -64,9 +65,10 @@ def insert_data(receipt_data):
 #         receipts.append(data)
 
 #     return receipts
-def get_all_receipts():
+def get_all_receipts(user_id):
     """Fetch all receipts + their items from Firestore."""
-    receipts_ref = db.collection("receipts").order_by("created_at", direction=firestore.Query.DESCENDING)
+    # receipts_ref = db.collection("receipts").order_by("created_at", direction=firestore.Query.DESCENDING)
+    receipts_ref = db.collection("receipts").where("user_sub","==",user_id).order_by("created_at",direction=firestore.Query.DESCENDING)
     docs = receipts_ref.stream()
     receipts = []
 

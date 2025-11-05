@@ -247,7 +247,7 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div>
-          <h1>Receipt Wallet Dashboard</h1>
+          <h1>Project R</h1>
           <p className="subtitle">Upload, review, save, and analyse receipts with Google Wallet integration.</p>
         </div>
         <span className="base-url">API: {API_BASE_URL}</span>

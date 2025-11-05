@@ -9,13 +9,13 @@ import jwt
 
 # --- FIREBASE SETUP ---
 if not firebase_admin._apps:
-    cred = credentials.Certificate("Gwallet/firebase_key/gwallet-180a9-firebase-adminsdk-fbsvc-c1fbf88538.json")
+    cred = credentials.Certificate("firebase_key/gwallet-180a9-firebase-adminsdk-fbsvc-c1fbf88538.json")
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
 # --- GOOGLE WALLET SETUP ---
-SERVICE_ACCOUNT_FILE = "Gwallet/wallet-service-key.json"
+SERVICE_ACCOUNT_FILE = "wallet-service-key.json"
 ISSUER_ID = "3388000000023012969"
 SCOPES = ["https://www.googleapis.com/auth/wallet_object.issuer"]
 
